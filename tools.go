@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -59,7 +60,13 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 		t.MaxFileSize = 1024 * 1024 * 1024
 	}
 
-	err := r.ParseMultipartForm(int64(t.MaxFileSize))
+	// create new folder/directory if necessary
+	err := t.CreateDirIfNotExist(uploadDir)
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.ParseMultipartForm(int64(t.MaxFileSize))
 	if err != nil {
 		return nil, errors.New("uploaded file exceeds allowed maximum file size")
 	}
@@ -118,7 +125,10 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 
 				// write file to disk in defined location (uploadDir)
 				var outFile *os.File
-				defer outFile.Close()
+				// defer file close at this point only if NOT on Windows
+				if runtime.GOOS != "windows" {
+					defer outFile.Close()
+				}
 
 				if outFile, err = os.Create(filepath.Join(uploadDir, uploadedFile.NewFileName)); err != nil {
 					return nil, err
@@ -128,6 +138,11 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 						return nil, err
 					}
 					uploadedFile.FileSize = fileSize
+				}
+
+				// explicitly close file to release its handle on Windows
+				if runtime.GOOS == "windows" {
+					outFile.Close()
 				}
 
 				uploadedFiles = append(uploadedFiles, &uploadedFile)
@@ -160,4 +175,16 @@ func (t *Tools) UploadOneFile(r *http.Request, uploadDir string, rename ...bool)
 	}
 
 	return files[0], nil
+}
+
+// CreateDirIfNotExist creates a directory and all necessary parents, if it does not exist
+func (t *Tools) CreateDirIfNotExist(path string) error {
+	const mode = 0755
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err := os.MkdirAll(path, mode)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

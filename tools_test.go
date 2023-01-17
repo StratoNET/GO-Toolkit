@@ -149,10 +149,30 @@ func TestTools_UploadOneFile(t *testing.T) {
 			t.Errorf("expected this file to exist: %s", err.Error())
 		}
 
-		// TODO: clean up (this doesn't actually work)
-		_ = os.Remove(fmt.Sprintf("./testdata/uploads/%s", uploadedFiles.NewFileName))
-		// if err != nil {
-		// 	t.Error("failed to delete uploaded test file", err)
-		// }
+		// clean up
+		err = os.Remove(fmt.Sprintf("./testdata/uploads/%s", uploadedFiles.NewFileName))
+		if err != nil {
+			t.Error("failed to delete uploaded test file", err)
+		}
+	}
+}
+
+func TestTools_CreateDirIfNotExist(t *testing.T) {
+	var testTool Tools
+	err := testTool.CreateDirIfNotExist("./testdata/newDir")
+	if err != nil {
+		t.Error("failed to create newDir", err)
+	}
+
+	// try creating new directory if it already exists
+	err = testTool.CreateDirIfNotExist("./testdata/newDir")
+	if err != nil {
+		t.Error("failed trying to create newDir when it already exists", err)
+	}
+
+	// clean up
+	err = os.Remove("./testdata/newDir")
+	if err != nil {
+		t.Error("failed to delete test directory newDir", err)
 	}
 }
