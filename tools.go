@@ -2,6 +2,7 @@ package toolkit
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,8 +20,10 @@ const randomStringSource = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 // Tools is used to instantiate this module. Any variable of this type will have access to all methods with the receiver *Tools
 type Tools struct {
-	AllowedFileTypes []string
-	MaxFileSize      int
+	AllowedFileTypes   []string
+	MaxFileSize        int
+	MaxJSONPayloadSize int
+	AllowUnknownFields bool
 }
 
 // RandomString returns string of random characters of length n, generated from randomStringSource
@@ -212,4 +215,112 @@ func (t *Tools) DownloadStaticFile(w http.ResponseWriter, r *http.Request, pathN
 	filePath := path.Join(pathName, fileName)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", displayName))
 	http.ServeFile(w, r, filePath)
+}
+
+// JSONResponse is used hold and transport JSON
+type JSONResponse struct {
+	Error   bool        `json:"error"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+// ReadJSON attempts to read request body and converts from JSON into a data variable
+func (t *Tools) ReadJSON(w http.ResponseWriter, r *http.Request, data interface{}) error {
+	// limit possible JSON payload size to 1MB & check
+	maxBytes := 1024 * 1024
+	if t.MaxJSONPayloadSize != 0 {
+		maxBytes = t.MaxJSONPayloadSize
+	}
+	// read request body
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
+	// decode response body
+	decoded := json.NewDecoder(r.Body)
+	// check decoded does not contain unknown fields
+	if !t.AllowUnknownFields {
+		decoded.DisallowUnknownFields()
+	}
+	// check for a range of potential errors
+	err := decoded.Decode(data)
+	if err != nil {
+		var syntaxError *json.SyntaxError
+		var unmarshalTypeError *json.UnmarshalTypeError
+		var invalidUnmarshalError *json.InvalidUnmarshalError
+
+		switch {
+		case errors.As(err, &syntaxError):
+			return fmt.Errorf("request body contains badly formed JSON: at character %d", syntaxError.Offset)
+
+		case errors.Is(err, io.ErrUnexpectedEOF):
+			return errors.New("request body contains badly formed JSON at some point within")
+
+		case errors.As(err, &unmarshalTypeError):
+			if unmarshalTypeError.Field != "" {
+				return fmt.Errorf("request body contains incorrect JSON type for field %q", unmarshalTypeError.Field)
+			}
+			return fmt.Errorf("request body contains incorrect JSON type: at character %d", unmarshalTypeError.Offset)
+
+		case errors.Is(err, io.EOF):
+			return errors.New("request body cannot be empty")
+
+		// this error is only possible if 'AllowUnknownFields' is set to true
+		case strings.HasPrefix(err.Error(), "json: unknown field"):
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field")
+			return fmt.Errorf("request body contains unknown key: %s", fieldName)
+
+		case err.Error() == "http: request body too large":
+			return fmt.Errorf("maximum allowed request body size is %d bytes", maxBytes)
+
+		case errors.As(err, &invalidUnmarshalError):
+			return fmt.Errorf("error unmarshalling JSON request body: %s", err.Error())
+
+		default:
+			return err
+		}
+	}
+	// check that decoded response does not contain more than one JSON file
+	err = decoded.Decode(&struct{}{})
+	if err != io.EOF {
+		return errors.New("response body must only contain one JSON value")
+	}
+
+	return nil
+}
+
+// WriteJSON takes a response status code & any data then writes JSON to the client
+func (t *Tools) WriteJSON(w http.ResponseWriter, status int, data interface{}, headers ...http.Header) error {
+	out, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	// using only one additional header if required
+	if len(headers) > 0 {
+		for key, value := range headers[0] {
+			w.Header()[key] = value
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, err = w.Write(out)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ErrorJSON takes an error and an optional status code, then generates and sends a JSON error message
+func (t *Tools) ErrorJSON(w http.ResponseWriter, err error, status ...int) error {
+	// default status code
+	statusCode := http.StatusBadRequest
+	// user supplied status code
+	if len(status) > 0 {
+		statusCode = status[0]
+	}
+
+	var payload JSONResponse
+	payload.Error = true
+	payload.Message = err.Error()
+
+	return t.WriteJSON(w, statusCode, payload)
 }
