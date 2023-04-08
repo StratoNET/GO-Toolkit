@@ -16,6 +16,46 @@ import (
 	"testing"
 )
 
+// ============================== ALTERNATIVE HTTP CLIENT ===============================
+// used to satisfy the requirement for an http client without having an actual remote API
+
+type RoundTripFunc func(req *http.Request) *http.Response
+
+func (f RoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req), nil
+}
+
+// NewTestClient provides 'pseudo' http client with no requirement for a remote API
+func NewTestClient(fn RoundTripFunc) *http.Client {
+	return &http.Client{
+		Transport: fn,
+	}
+}
+
+// ======================================================================================
+
+func TestTools_PushJSONToRemoteService(t *testing.T) {
+	client := NewTestClient(func(req *http.Request) *http.Response {
+		// set test request parameters
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString("data from pretend remote API")),
+			Header:     make(http.Header),
+		}
+	})
+
+	var testTool Tools
+	var retro struct {
+		Rocker string `json:"rocker"`
+	}
+	retro.Rocker = "ok"
+
+	_, _, err := testTool.PushJSONToRemoteService("http://stratosoft.uk/some/path", retro, client)
+	if err != nil {
+		t.Error("failed to call remote service:", err)
+	}
+}
+
 func TestTools_RandomString(t *testing.T) {
 	var testTools Tools
 
