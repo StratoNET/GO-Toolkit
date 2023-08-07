@@ -49,14 +49,18 @@ type UploadedFile struct {
 	FileSize         int64
 }
 
-// UploadFiles allows uploading multiple files in one action to a specified directory with, if required, random naming.
-// A slice containing newly named files, original file names, file size is returned and potentially an error.
-// If the optional last parameter is set to true then files are not renamed but retain their original file names.
-func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) ([]*UploadedFile, error) {
-	// rename files by default or by whatever value in rename (which might exist)
-	renameFile := true
-	if len(rename) > 0 {
-		renameFile = rename[0]
+// UploadFiles allows uploading multiple files in one action to a specified directory with, if required, specified renaming patterns.
+// A slice containing newly named files, original file names & file size is returned and potentially, an error.
+// If the *optional* last parameter is an empty string then files are NOT renamed but retain their original filenames.
+// Available renaming patterns...
+// 1. 'noSpaces:retainCase' - all spaces are replaced by underscores, character case is retained.
+// 2. 'noSpaces:allLowercase' - all spaces are replaced by underscores, all characters are lowercase.
+// 3. 'randomString' - substitutes a filename consisting of 32 random characters
+func (t *Tools) UploadFiles(r *http.Request, uploadDir string, renamePattern ...string) ([]*UploadedFile, error) {
+	// default is NOT to rename files or rename by whatever value is in renamePattern (if it exists)
+	renameFile := ""
+	if len(renamePattern) > 0 {
+		renameFile = renamePattern[0]
 	}
 
 	var uploadedFiles []*UploadedFile
@@ -121,10 +125,21 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 					return nil, err
 				}
 
-				// rename file or use original file name
-				if renameFile {
-					uploadedFile.NewFileName = fmt.Sprintf("%s%s", t.RandomString(32), filepath.Ext(hdr.Filename))
-				} else {
+				rex := regexp.MustCompile(`[^a-zA-Z\-\d]+`)
+				ext := filepath.Ext(hdr.Filename)
+				name := strings.TrimSuffix(hdr.Filename, ext)
+
+				// rename file using chosen method or use original file name
+				switch renameFile {
+				case "noSpaces:retainCase": //case 1
+					uploadedFile.NewFileName = fmt.Sprintf("%s%s", strings.Trim(rex.ReplaceAllString(name, "_"), "_"), ext)
+				case "noSpaces:allLowercase": // case 2
+					uploadedFile.NewFileName = fmt.Sprintf("%s%s", strings.Trim(rex.ReplaceAllString(strings.ToLower(name), "_"), "_"), ext)
+				case "randomString": // case 3
+					uploadedFile.NewFileName = fmt.Sprintf("%s%s", t.RandomString(32), ext)
+				case "": // case 4
+					uploadedFile.NewFileName = hdr.Filename
+				default:
 					uploadedFile.NewFileName = hdr.Filename
 				}
 				uploadedFile.OriginalFileName = hdr.Filename
@@ -167,12 +182,12 @@ func (t *Tools) UploadFiles(r *http.Request, uploadDir string, rename ...bool) (
 	return uploadedFiles, nil
 }
 
-// UploadOneFile convenience method which restricts to uploading only one file
-func (t *Tools) UploadOneFile(r *http.Request, uploadDir string, rename ...bool) (*UploadedFile, error) {
-	// rename file by default or by whatever value in rename (which might exist)
-	renameFile := true
-	if len(rename) > 0 {
-		renameFile = rename[0]
+// UploadOneFile convenience method which restricts to uploading only one file, all renaming patterns can be used
+func (t *Tools) UploadOneFile(r *http.Request, uploadDir string, renamePattern ...string) (*UploadedFile, error) {
+	// default is NOT to rename files or rename by whatever value is in renamePattern (if it exists)
+	renameFile := ""
+	if len(renamePattern) > 0 {
+		renameFile = renamePattern[0]
 	}
 
 	files, err := t.UploadFiles(r, uploadDir, renameFile)

@@ -7,7 +7,7 @@ The included tools are:
 - [x] Read JSON
 - [x] Write JSON
 - [x] Produce a JSON encoded error response
-- [x] Upload a file or multiple files to a specified directory
+- [x] Upload a file or multiple files to a specified directory, with optional specified renaming patterns
 - [x] Download a static file
 - [x] Get a random string of length n
 - [x] Post JSON to a remote service

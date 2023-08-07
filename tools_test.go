@@ -68,12 +68,12 @@ func TestTools_RandomString(t *testing.T) {
 var uploadTests = []struct {
 	name             string
 	allowedMIMETypes []string
-	renameFile       bool
+	renamePattern    string
 	errorExpected    bool
 }{
-	{name: "allowed MIME type, no rename", allowedMIMETypes: []string{"image/jpg", "image/jpeg", "image/png"}, renameFile: false, errorExpected: false},
-	{name: "allowed MIME type, rename", allowedMIMETypes: []string{"image/jpg", "image/jpeg", "image/png"}, renameFile: true, errorExpected: false},
-	{name: "not allowed MIME type, no rename", allowedMIMETypes: []string{"image/jpg", "image/jpeg"}, renameFile: false, errorExpected: true},
+	{name: "allowed MIME type, no rename", allowedMIMETypes: []string{"image/jpg", "image/jpeg", "image/png"}, renamePattern: "", errorExpected: false},
+	{name: "allowed MIME type, rename", allowedMIMETypes: []string{"image/jpg", "image/jpeg", "image/png"}, renamePattern: "noSpaces:retainCase", errorExpected: false},
+	{name: "not allowed MIME type, no rename", allowedMIMETypes: []string{"image/jpg", "image/jpeg"}, renamePattern: "", errorExpected: true},
 }
 
 func TestTools_UploadFiles(t *testing.T) {
@@ -120,7 +120,7 @@ func TestTools_UploadFiles(t *testing.T) {
 		var testTools Tools
 		testTools.AllowedFileTypes = e.allowedMIMETypes
 
-		uploadedFiles, err := testTools.UploadFiles(request, "./testdata/uploads/", e.renameFile)
+		uploadedFiles, err := testTools.UploadFiles(request, "./testdata/uploads/", e.renamePattern)
 		if err != nil && !e.errorExpected {
 			t.Error("upload failed", err)
 		}
@@ -184,7 +184,7 @@ func TestTools_UploadOneFile(t *testing.T) {
 
 		var testTools Tools
 
-		uploadedFiles, err := testTools.UploadOneFile(request, "./testdata/uploads/", e.renameFile)
+		uploadedFiles, err := testTools.UploadOneFile(request, "./testdata/uploads/", e.renamePattern)
 		if err != nil {
 			t.Error("upload failed", err)
 		}
